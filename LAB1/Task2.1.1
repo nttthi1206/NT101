@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+# ============================================================
+#  Caesar Cipher - Encode & Decode
+#  LAB1 / Task 2.1
+# ============================================================
+
+### Ham caesar_decrypt dung de ma hoa 
+def caesar_encrypt(text, key):  
+    """Encrypt plaintext using Caesar cipher."""
+    result = []
+    for ch in text:
+        if ch.isalpha():
+            base = ord('A') if ch.isupper() else ord('a') #  Vi tri cua chu cai trong bang chu cai
+            encrypted = chr((ord(ch) - base + key) % 26 + base) # cong thuc dich chu cai de biet vi tri chu cai sau khi dich
+            result.append(encrypted) 
+        else:
+            result.append(ch)   # neu khong phai la chu cai thi se giu nguyen ky tu do ( vi du: !, @, #, 1, 2, 3, dau cach,..)
+    return ''.join(result)
+
+### Ham dung de giai ma caesar_decrypt
+def caesar_decrypt(text, key):
+    """Decrypt ciphertext using Caesar cipher."""
+    return caesar_encrypt(text, -key)  # cong dung giai ma, chi can dich nguoc lai voi key vi tri 
+
+### Ham dung de nhap key tu nguoi dung, dam bao key la so nguyen va tra ve key duoi dang so nguyen trong khoang 0-25
+def get_key():
+    """Prompt the user for a valid integer key."""
+    while True:
+        try:
+            key = int(input("Enter the Caesar cipher key (integer): "))  
+            return key % 26  # neu key lon hon 25 hoac la so am, se lay phan du cua key chia cho 26 de co key trong khoang 0-25
+        except ValueError:
+            print("  [!] Invalid key. Please enter an integer.")
+
+
+def main():
+    print("=" * 45)
+    print("       Caesar Cipher — Encode / Decode")
+    print("=" * 45)
+
+    while True:
+        print("\nOptions:")
+        print("  1. Encrypt (encode) a message")
+        print("  2. Decrypt (decode) a message")
+        print("  3. Exit")
+
+        choice = input("\nSelect an option (1/2/3): ").strip()
+
+        if choice == '1':
+            key  = get_key()
+            text = input("Enter the plaintext : ")
+            cipher = caesar_encrypt(text, key)
+            print(f"\n  [+] Key        : {key}")
+            print(f"  [+] Plaintext  : {text}")
+            print(f"  [+] Ciphertext : {cipher}")
+
+        elif choice == '2':
+            key  = get_key()
+            text = input("Enter the ciphertext: ")
+            plain = caesar_decrypt(text, key)
+            print(f"\n  [+] Key        : {key}")
+            print(f"  [+] Ciphertext : {text}")
+            print(f"  [+] Plaintext  : {plain}")
+
+        elif choice == '3':
+            print("Byebye!")
+            break
+
+        else:
+            print("  [!] Invalid option. Please choose 1, 2, or 3.")
+
+
+if __name__ == "__main__": 
+    main()

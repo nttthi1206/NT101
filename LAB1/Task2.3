@@ -1,0 +1,371 @@
+#!/usr/bin/env python3
+# =============================================================================
+#  Mono-alphabetic Substitution Cipher — Automatic Decoder
+#  LAB1 / Task 2.3
+#
+#  Strategy
+#  --------
+#  1. Standardise ciphertext  → uppercase letters only
+#  2. Build initial key guess → map cipher frequencies → English frequencies
+#  3. Score candidate keys    → sum of bigram log-probabilities (fitness)
+#  4. Optimise                → hill-climbing with random swaps
+#  5. Avoid local optima      → multiple random-restart runs
+#  6. Report                  → best plaintext + key map + process stats
+# =============================================================================
+
+import math
+import random
+import sys
+import os
+import time
+from collections import Counter
+
+
+
+# 2 ham nhan dang cac chu cai trong tieng anh theo tan so xuat hien cua chu cai do
+ENGLISH_FREQ_ORDER = "ETAOINSHRDLCUMWFGYPBVKJXQZ"
+
+
+_BIGRAM_RAW = {
+    "TH":3.882,"HE":3.681,"IN":2.283,"ER":2.278,"AN":2.140,"RE":2.007,
+    "ON":1.758,"EN":1.749,"AT":1.736,"ES":1.735,"ED":1.695,"TE":1.609,
+    "TI":1.562,"OR":1.490,"ST":1.444,"AR":1.301,"ND":1.298,"TO":1.290,
+    "NT":1.270,"IS":1.196,"OF":1.177,"IT":1.161,"AL":1.107,"AS":1.073,
+    "HA":1.067,"ET":1.055,"SE":1.048,"OU":1.042,"VE":1.019,"DE":0.994,
+    "LE":0.960,"SA":0.956,"IO":0.927,"ME":0.924,"NG":0.913,"LY":0.905,
+    "EL":0.897,"OT":0.896,"LA":0.880,"NO":0.873,"RO":0.867,"IL":0.850,
+    "MA":0.842,"TA":0.832,"HI":0.826,"NE":0.812,"IC":0.811,"RI":0.791,
+    "WH":0.790,"SI":0.787,"LI":0.779,"OM":0.776,"CO":0.773,"RA":0.762,
+    "BE":0.744,"OW":0.743,"TR":0.743,"EE":0.732,"WI":0.728,"AC":0.727,
+    "LO":0.723,"GE":0.720,"LL":0.715,"PE":0.713,"HO":0.707,"US":0.700,
+    "IA":0.697,"DI":0.691,"SO":0.686,"EW":0.666,"LD":0.661,"RS":0.656,
+    "EC":0.652,"UR":0.644,"PR":0.640,"UT":0.636,"TT":0.609,"SS":0.607,
+    "CA":0.600,"EI":0.596,"FO":0.595,"WA":0.594,"PA":0.590,"CE":0.588,
+}
+_FLOOR = -10.0  
+ # O day co su dung 2 bien la _BIGRAM_RAW va _FLOOR de tinh log-probabilities cua cac bigram
+BIGRAM_LOG = {}
+_total = sum(_BIGRAM_RAW.values())
+for _bg, _f in _BIGRAM_RAW.items():
+    BIGRAM_LOG[_bg] = math.log(_f / _total)
+
+# Ham chuan hoa ciphertext truoc khi phan tich, tra ve chu hoa, bo cac ky tu khong phai chu cai
+def standardise(text: str) -> str:
+    """Return only uppercase alphabetic characters."""
+    return "".join(ch.upper() for ch in text if ch.isalpha())
+
+# Ham tinh chi so trung hop (Index of Coincidence) cua mot doan van ban : de xem vban co giong ngon ngu tu nhien hay khong 
+def index_of_coincidence(text: str) -> float:
+    """
+    IC = Σ n_i*(n_i-1) / (N*(N-1))
+    English prose ≈ 0.065 ; random ≈ 0.038
+    """
+    n = len(text)
+    if n < 2:
+        return 0.0
+    counts = Counter(text)
+    numer = sum(c * (c - 1) for c in counts.values())
+    return numer / (n * (n - 1))
+
+
+
+# Ham nay dung de giai ma ciphertext voi key duoc cung cap, tra ve plaintext
+def apply_key(ciphertext: str, key: dict) -> str:
+    """Decrypt ciphertext with substitution key {cipher_letter: plain_letter}."""
+    return "".join(key.get(ch, ch) for ch in ciphertext)
+
+# Ham dung de dem tan xuat chu cai trong ban ma, sau do sap xep giam dan 
+def freq_order(text: str) -> str:
+    """Return letters sorted by descending frequency in text."""
+    counts = Counter(text)
+    return "".join(ch for ch, _ in counts.most_common() if ch.isalpha())
+
+# Day la key khoi diem, dem so lan chu cai ma xuat hien nhieu nhat, sau do sap xep theo thu tu tan xuat tien anh => se co nhieu sai sot 
+def build_initial_key(cipher_freq: str) -> dict:
+    """
+    Map the most-frequent cipher letter → 'E', second → 'T', etc.
+    Pad with remaining letters if the ciphertext doesn't use all 26.
+    """
+    used_cipher  = list(cipher_freq)
+    plain_target = list(ENGLISH_FREQ_ORDER)
+
+    for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":  
+        if ch not in used_cipher:  
+            used_cipher.append(ch)
+    for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":  
+        if ch not in plain_target:
+            plain_target.append(ch)
+
+    return dict(zip(used_cipher, plain_target))
+
+# Ham dung de tao mot key thay the hoan toan ngau nhien, dung cho cac lan chay lai/restart 
+def random_key() -> dict:
+    """Produce a fully random substitution key."""
+    plain = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    shuffled = plain[:]
+    random.shuffle(shuffled)
+    return dict(zip(plain, shuffled))
+
+# Ham dung de hoan doi hai cap chu cai trong key, tra ve mot key moi
+def swap_two(key: dict) -> dict:
+    """Return a new key with two cipher→plain mappings swapped."""
+    new_key = key.copy()
+    c1, c2 = random.sample(list(new_key.keys()), 2)
+    new_key[c1], new_key[c2] = new_key[c2], new_key[c1]
+    return new_key
+
+# Ham cham diem plaintext, y tuong la neu mot plaintext giong tieng anh thi cac cap chu cai co xac suat xuat hien cao 
+def score_bigram(text: str) -> float:
+    """Fitness = sum of bigram log-probabilities over the text."""
+    total = 0.0
+    for i in range(len(text) - 1):
+        bg = text[i] + text[i + 1]
+        total += BIGRAM_LOG.get(bg, _FLOOR)
+    return total
+
+
+# Hill-climbing optimiser (single run)
+def hill_climb(ciphertext: str, init_key: dict,
+               max_iterations: int = 3000) -> tuple:
+    """
+    Perform hill-climbing from init_key.
+    Returns (best_key, best_score, iterations_used).
+    """
+    current_key   = init_key.copy()
+    current_plain = apply_key(ciphertext, current_key)
+    current_score = score_bigram(current_plain)
+
+    best_key   = current_key.copy()
+    best_score = current_score
+
+    no_improve = 0
+    for iteration in range(1, max_iterations + 1):
+        candidate_key   = swap_two(current_key)
+        candidate_plain = apply_key(ciphertext, candidate_key)
+        candidate_score = score_bigram(candidate_plain)
+
+        if candidate_score > current_score:
+            current_key   = candidate_key
+            current_score = candidate_score
+            no_improve    = 0
+
+            if current_score > best_score:
+                best_key   = current_key.copy()
+                best_score = current_score
+        else:
+            no_improve += 1
+
+        if no_improve >= 1000:
+            break
+
+    return best_key, best_score, iteration
+
+
+# Full automatic decoder with random restarts
+def decode(ciphertext: str,
+           n_restarts: int = 20,
+           max_iter_per_run: int = 4000,
+           verbose: bool = True) -> dict:
+    """
+    Run hill-climbing n_restarts times and return the best result.
+    """
+    clean = standardise(ciphertext)
+
+    if verbose:
+        print("\n" + "=" * 60)
+        print("  PRE-PROCESSING")
+        print("=" * 60)
+        print(f"  Original length : {len(ciphertext)} characters")
+        print(f"  Alpha-only      : {len(clean)} characters")
+        ic = index_of_coincidence(clean)
+        print(f"  Index of Coincidence (IC) : {ic:.4f}")
+        print(f"  (English ≈ 0.065 | Random ≈ 0.038)")
+
+        cf = freq_order(clean)
+        print(f"\n  Cipher frequency order : {cf}")
+        print(f"  English freq order     : {ENGLISH_FREQ_ORDER}")
+
+    # Initial frequency-based key=========
+    cipher_freq_order = freq_order(clean)
+    freq_key = build_initial_key(cipher_freq_order)
+
+    global_best_key   = None
+    global_best_score = float("-inf")
+    global_best_plain = ""
+    run_log = []
+
+    start_time = time.time()
+
+    for run in range(1, n_restarts + 1):
+        # Alternate between frequency seed and random restarts
+        if run == 1:
+            init_key = freq_key
+        else:
+            init_key = random_key()
+
+        key, score, iters = hill_climb(clean, init_key, max_iter_per_run)
+        plain = apply_key(clean, key)
+        run_log.append((run, score, iters))
+
+        if verbose:
+            bar = "#" * int((run / n_restarts) * 30)
+            print(f"\r  Optimising  [{bar:<30}] run {run:>2}/{n_restarts}  score={score:.1f}",
+                  end="", flush=True)
+
+        if score > global_best_score:
+            global_best_score = score
+            global_best_key   = key.copy()
+            global_best_plain = plain
+
+    elapsed = time.time() - start_time
+    if verbose:
+        print()   # newline after progress bar
+
+    return {
+        "clean_cipher" : clean,
+        "best_key"     : global_best_key,
+        "best_score"   : global_best_score,
+        "best_plain"   : global_best_plain,
+        "run_log"      : run_log,
+        "elapsed"      : elapsed,
+        "n_restarts"   : n_restarts,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Display helpers
+# ---------------------------------------------------------------------------
+
+def display_key(key: dict):
+    """Pretty-print the substitution key table."""
+    cipher_row = " ".join(sorted(key.keys()))
+    plain_row  = " ".join(key[c] for c in sorted(key.keys()))
+    print(f"  Cipher : {cipher_row}")
+    print(f"  Plain  : {plain_row}")
+
+
+def restore_case(ciphertext: str, plaintext_upper: str) -> str:
+    """
+    Map decrypted (uppercase-only) back to original casing/spacing.
+    Non-alpha characters from original are re-inserted.
+    """
+    result = []
+    pi = 0
+    for ch in ciphertext:
+        if ch.isalpha():
+            dec = plaintext_upper[pi] if pi < len(plaintext_upper) else ch
+            result.append(dec.lower() if ch.islower() else dec.upper())
+            pi += 1
+        else:
+            result.append(ch)
+    return "".join(result)
+
+
+def display_results(result: dict, original_cipher: str):
+    print("\n" + "=" * 60)
+    print("  OPTIMISATION SUMMARY")
+    print("=" * 60)
+    run_log = result["run_log"]
+    scores  = [s for _, s, _ in run_log]
+    print(f"  Runs completed    : {result['n_restarts']}")
+    print(f"  Best score        : {result['best_score']:.2f}")
+    print(f"  Worst score       : {min(scores):.2f}")
+    print(f"  Average score     : {sum(scores)/len(scores):.2f}")
+    print(f"  Time elapsed      : {result['elapsed']:.2f}s")
+
+    print("\n" + "=" * 60)
+    print("  RECOVERED SUBSTITUTION KEY")
+    print("=" * 60)
+    display_key(result["best_key"])
+
+    print("\n" + "=" * 60)
+    print("  BEST PLAINTEXT (alpha-only, uppercase)")
+    print("=" * 60)
+    plain = result["best_plain"]
+    # print in 80-char chunks for readability
+    for i in range(0, len(plain), 80):
+        print("  " + plain[i:i+80])
+
+    print("\n" + "=" * 60)
+    print("  BEST PLAINTEXT (original formatting restored)")
+    print("=" * 60)
+    restored = restore_case(original_cipher, result["best_plain"])
+    for i in range(0, len(restored), 80):
+        print("  " + restored[i:i+80])
+
+    ic_plain = index_of_coincidence(plain)
+    print(f"\n  IC of decrypted text : {ic_plain:.4f}")
+    print(f"  (Target English IC   : ~0.065)")
+    print("=" * 60)
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+def get_ciphertext() -> str:
+    """Prompt user: type ciphertext directly or provide a file path."""
+    print("=" * 60)
+    print("  Mono-alphabetic Substitution Cipher — Auto Decoder")
+    print("=" * 60)
+    print("\nInput options:")
+    print("  1. Type / paste ciphertext directly")
+    print("  2. Read ciphertext from a file")
+    choice = input("\nSelect option (1/2): ").strip()
+
+    if choice == "2":
+        path = input("Enter file path: ").strip()
+        if not os.path.isfile(path):
+            print(f"  [!] File not found: {path}")
+            sys.exit(1)
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    else:
+        print("Enter/paste ciphertext (press Enter twice when done):")
+        lines = []
+        while True:
+            line = input()
+            if line == "" and lines and lines[-1] == "":
+                break
+            lines.append(line)
+        return "\n".join(lines)
+
+
+def main():
+    random.seed(42)   # reproducible baseline; restarts add real randomness
+
+    ciphertext = get_ciphertext()
+
+    if len(standardise(ciphertext)) < 20:
+        print("  [!] Ciphertext too short for reliable statistical analysis.")
+        sys.exit(1)
+
+    # --- Run decoder ---
+    result = decode(ciphertext, n_restarts=25, max_iter_per_run=5000, verbose=True)
+
+    # --- Show results ---
+    display_results(result, ciphertext)
+
+    # --- Offer to iterate further ---
+    print("\nWould you like to run more optimisation passes? (y/n): ", end="")
+    again = input().strip().lower()
+    extra_round = 1
+    while again == "y":
+        extra_round += 1
+        print(f"\n  [Round {extra_round}] Running 15 more restarts from current best key...")
+        # Seed next round from the best key found so far
+        result2 = decode(ciphertext, n_restarts=15, max_iter_per_run=5000, verbose=True)
+        if result2["best_score"] > result["best_score"]:
+            print("  [+] Found a better solution!")
+            result = result2
+        else:
+            print("  [=] No improvement. Current solution kept.")
+        display_results(result, ciphertext)
+        print("\nRun another round? (y/n): ", end="")
+        again = input().strip().lower()
+
+    print("\n  Done. Goodbye!")
+
+
+if __name__ == "__main__":
+    main()

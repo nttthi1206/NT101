@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+# =============================================================================
+#  Vigenère Cipher — Encrypt & Decrypt
+#  LAB1 / Task 2.5
+# =============================================================================
+
+import re
+
+def clean_key(key: str) -> str:
+    return re.sub(r"[^A-Za-z]", "", key).upper()
+
+
+def clean_text(text: str) -> str:
+    return re.sub(r"[^A-Za-z]", "", text).upper()
+
+# Ham ma hoa chinh
+def vigenere_encrypt(plaintext: str, key: str) -> str:
+    pt  = clean_text(plaintext)
+    key = clean_key(key)
+    if not key:
+        raise ValueError("Key must contain at least one letter.")
+
+    cipher = []
+    for i, ch in enumerate(pt):
+        p = ord(ch)      - ord('A')
+        k = ord(key[i % len(key)]) - ord('A')
+        cipher.append(chr((p + k) % 26 + ord('A')))
+
+    raw = "".join(cipher)
+    
+    return " ".join(raw[i:i+5] for i in range(0, len(raw), 5))
+
+# Ham giai ma chinh
+def vigenere_decrypt(ciphertext: str, key: str) -> str:
+    ct  = clean_text(ciphertext)
+    key = clean_key(key)
+    if not key:
+        raise ValueError("Key must contain at least one letter.")
+
+    plain = []
+    for i, ch in enumerate(ct):
+        c = ord(ch)      - ord('A')
+        k = ord(key[i % len(key)]) - ord('A')
+        plain.append(chr((c - k + 26) % 26 + ord('A')))
+
+    return "".join(plain)
+
+
+ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+# ham in ra bang Vigenere Square (Tabula Recta)
+def print_tabula_recta() -> None:
+    header = "     " + "  ".join(ALPHA)
+    sep    = "    +" + "---" * 26 + "-"
+    print("\n  [*] VIGENÈRE SQUARE (Tabula Recta)")
+    print("  " + header)
+    print("  " + sep)
+    for i, row_key in enumerate(ALPHA):
+        row = [(chr((ord(col) - ord('A') + i) % 26 + ord('A'))) for col in ALPHA]
+        print(f"   {row_key} | " + "  ".join(row))
+    print()
+
+# ham in ra bang Vigenere Square (Tabula Recta)
+def print_step_table(text: str, key: str, mode: str) -> None:
+    clean = clean_text(text)
+    key_c = clean_key(key)
+    n     = len(clean)
+
+    print(f"\n  {'Index':<7} {'Input':<8} {'Key':<7} "
+          f"{'In#':<6} {'Key#':<7} {'Out#':<7} {'Output'}")
+    print("  " + "-" * 55)
+
+    for i in range(min(n, 40)):       
+        ch  = clean[i]
+        kch = key_c[i % len(key_c)]
+        p   = ord(ch)  - ord('A')
+        k   = ord(kch) - ord('A')
+        if mode == "enc":
+            out_num = (p + k) % 26
+        else:
+            out_num = (p - k + 26) % 26
+        out = chr(out_num + ord('A'))
+        print(f"  {i:<7} {ch:<8} {kch:<7} {p:<6} {k:<7} {out_num:<7} {out}")
+
+    if n > 40:
+        print(f"  ... ({n - 40} more characters not shown)")
+    print()
+
+
+def print_separator(title: str = "") -> None:
+    if title:
+        side = (50 - len(title) - 2) // 2
+        print("\n" + "=" * side + f" {title} " + "=" * side)
+    else:
+        print("\n" + "=" * 52)
+
+
+# ---------------------------------------------------------------------------
+# 3.  BUILT-IN SELF-TEST  (≥ 100 words)
+# ---------------------------------------------------------------------------
+
+TEST_PLAINTEXT = (
+    "Mono-alphabetic substitution cipher là phương pháp mã hóa thay thế trong đó mỗi chữ"
+"cái của bản rõ được thay bằng một chữ cái khác và sự thay thế này được giữ cố định trong"
+"toàn bộ văn bản. Do đặc điểm này, phân bố tần suất xuất hiện của các chữ cái trong"
+"ciphertext vẫn phản ánh phần nào tần suất trong ngôn ngữ tự nhiên, vì vậy phương pháp"
+"này có thể bị phá bằng kỹ thuật frequency analysis. Kỹ thuật này dựa trên việc thống kê"
+"tần suất xuất hiện của các ký tự, cặp ký tự hoặc bộ ba ký tự, sau đó so sánh với bảng"
+"tần suất chuẩn của tiếng Anh để suy đoán dần các ánh xạ giữa ciphertext và plaintext."
+)
+
+TEST_KEY = "SECURITY"
+
+
+def run_self_test() -> None:
+    print_separator("SELF-TEST")
+    print(f"\n  Key          : {TEST_KEY}")
+    print(f"\n  Original text ({len(TEST_PLAINTEXT.split())} words):")
+    for i in range(0, len(TEST_PLAINTEXT), 80):
+        print("  ", TEST_PLAINTEXT[i:i+80])
+
+    # --- Encrypt ---
+    cipher_grouped = vigenere_encrypt(TEST_PLAINTEXT, TEST_KEY)
+    cipher_raw     = cipher_grouped.replace(" ", "")
+    print(f"\n  Ciphertext (grouped by 5):")
+    for i in range(0, len(cipher_grouped), 60):
+        print("  ", cipher_grouped[i:i+60])
+
+    # --- Decrypt ---
+    recovered = vigenere_decrypt(cipher_raw, TEST_KEY)
+    original  = clean_text(TEST_PLAINTEXT)
+
+    print(f"\n  Recovered plaintext:")
+    for i in range(0, len(recovered), 80):
+        print("  ", recovered[i:i+80])
+
+    # --- Verify ---
+    match = (original == recovered)
+    print(f"\n  Original  length : {len(original)} characters")
+    print(f"  Recovered length : {len(recovered)} characters")
+    print(f"\n  {'✓ PASS — Decryption matches original!' if match else '✗ FAIL — Mismatch detected!'}")
+    print_separator()
+
+
+# ---------------------------------------------------------------------------
+# 4.  INTERACTIVE MENU
+# ---------------------------------------------------------------------------
+
+def menu_encrypt() -> None:
+    print_separator("ENCRYPT")
+    key  = input("\n  Enter key       : ").strip()
+    text = input("  Enter plaintext : ").strip()
+
+    if not clean_key(key):
+        print("  [!] Key must contain at least one letter."); return
+    if not clean_text(text):
+        print("  [!] Plaintext must contain at least one letter."); return
+
+    cipher = vigenere_encrypt(text, key)
+    print(f"\n  Key (cleaned)  : {clean_key(key)}")
+    print(f"  Plain (cleaned): {clean_text(text)}")
+    print(f"\n  [*] Ciphertext : {cipher}")
+
+    if input("\n  Show step-by-step table? (y/n): ").strip().lower() == "y":
+        print_step_table(text, key, "enc")
+
+
+def menu_decrypt() -> None:
+    print_separator("DECRYPT")
+    key    = input("\n  Enter key        : ").strip()
+    cipher = input("  Enter ciphertext : ").strip()
+
+    if not clean_key(key):
+        print("  [!] Key must contain at least one letter."); return
+    if not clean_text(cipher):
+        print("  [!] Ciphertext must contain at least one letter."); return
+
+    plain = vigenere_decrypt(cipher, key)
+    print(f"\n  Key (cleaned)      : {clean_key(key)}")
+    print(f"  Cipher (cleaned)   : {clean_text(cipher)}")
+    print(f"\n  [*] Plaintext      : {plain}")
+
+    if input("\n  Show step-by-step table? (y/n): ").strip().lower() == "y":
+        print_step_table(cipher, key, "dec")
+
+
+def main() -> None:
+    print("=" * 52)
+    print("       VIGENÈRE CIPHER — Encrypt / Decrypt")
+    print("=" * 52)
+    print("  1. Encrypt  (plaintext  →  ciphertext)")
+    print("  2. Decrypt  (ciphertext →  plaintext )")
+    print("  3. Show Vigenère Square (Tabula Recta)")
+    print("  4. Run built-in self-test (≥ 100 words)")
+    print("  5. Exit")
+
+    while True:
+        choice = input("\nSelect option (1–5): ").strip()
+
+        if   choice == "1": menu_encrypt()
+        elif choice == "2": menu_decrypt()
+        elif choice == "3": print_tabula_recta()
+        elif choice == "4": run_self_test()
+        elif choice == "5": print("\n  Goodbye!\n"); break
+        else: print("  [!] Invalid option. Please enter 1–5.")
+
+
+if __name__ == "__main__":
+    main()

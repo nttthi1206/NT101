@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+# ============================================================
+#  Caesar Cipher - Brute-Force Attack
+#  LAB1 / Task 2.1.2
+#
+#  Given only the ciphertext, try every possible key (1-25)
+#  and display all candidate plaintexts so the user can
+#  identify the correct one by inspection.
+# ============================================================
+
+### Ham dung de giai ma caesar_decrypt
+def caesar_decrypt(text, key):
+    """Decrypt ciphertext using Caesar cipher with the given key."""
+    result = []
+    for ch in text:
+        if ch.isalpha():  # kiem tra ky tu co phai chu cai hay khong 
+            base = ord('A') if ch.isupper() else ord('a') # xac dinh la chu hoa hay chu thuong -> muc dich giu nguyen mau chu 
+            result.append(chr((ord(ch) - base - key) % 26 + base)) # cong thuc dich chu cai 
+        else:
+            result.append(ch)   
+    return ''.join(result)
+
+### Ham dung de thu tat ca cac key co the va tra ve danh sach cac cap (key, plaintext)
+def brute_force(ciphertext):  # ham nhan ciphertext ma khong can biet key 
+    """Try all 25 possible keys and return a list of (key, plaintext) pairs."""
+    results = []  # danh sach luu tru cac cap (key, plaintext) vd: [(1, "plaintext1")]
+    for key in range(1, 26): # vong lap tu 1 den 25 de thu tat ca cac key co the
+        plaintext = caesar_decrypt(ciphertext, key) # Giai ma ciphertext voi tung key
+        results.append((key, plaintext))
+    return results
+
+
+def main():
+    print("=" * 55)
+    print("     Caesar Cipher — Brute-Force Attack (keys 1-25)")
+    print("=" * 55)
+
+    ciphertext = input("\nEnter the ciphertext: ").strip()
+
+    if not ciphertext:
+        print("  [!] No input provided. Exiting.")
+        return
+
+    print(f"\n  Ciphertext : {ciphertext}")
+    print("\n" + "-" * 55)
+    print(f"  {'Key':>3}  |  Decrypted text")
+    print("-" * 55)
+
+    candidates = brute_force(ciphertext)
+    for key, plaintext in candidates:
+        print(f"  Key {key:>2}  |  {plaintext}")
+
+    print("-" * 55)
+
+    
+    print("\nIdentify the correct plaintext from the list above.")
+    while True:
+        try:
+            chosen = int(input("Enter the key that gives the correct plaintext (1-25): "))
+            if 1 <= chosen <= 25:
+                break
+            print("  [!] Please enter a number between 1 and 25.")
+        except ValueError:
+            print("  [!] Invalid input. Please enter an integer.")
+
+    correct_plain = caesar_decrypt(ciphertext, chosen)
+    print("\n" + "=" * 55)
+    print(f"  [+] Key confirmed  : {chosen}")
+    print(f"  [+] Ciphertext     : {ciphertext}")
+    print(f"  [+] Plaintext      : {correct_plain}")
+    print("=" * 55)
+
+
+if __name__ == "__main__":
+    main()
